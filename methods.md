@@ -1,0 +1,150 @@
+## 06. How does mamp-ml compare to other structural models
+
+Assessing how mamp-ml compares to other structural models is important for determining its potential advantages. There are many structural models that exist but we will test a couple to A) see how they perform and B) determine if the outputs of those models in combination with a simple regession model can outcompete mamp-ml performance. 
+
+```
+# make director of outputs 
+mkdir 16_structural_models
+
+# we then wrote a script that inputs All_LRR_PRR_ligand_data.xlsx and outputs an updated excel sheet that has co-receptor information as well (we will want to compare structural models with and without co-receptor information)
+
+# install packages and run script
+conda install -y -c bioconda -c conda-forge parasail-python
+python 16_structural_models/serk_pipeline.py
+```
+
+Next, we need to build the multiple sequence alignments (MSAs) for each receptor sequence. This is an essential step for structural modeling, as high-quality MSAs will be used as input features for downstream structure prediction tools such as Boltz and will directly impact the accuracy of the resulting structural models.
+
+```
+# output for msas
+mkdir -p 16_structural_models/receptor_only_msas
+
+# install colabfold
+pip install uv
+uv venv ~/envs/colabfold --python 3.11
+source ~/envs/colabfold/bin/activate
+uv pip install colabfold
+
+# MMseqs2 static binary for macOS (Homebrew's version can lag behind what ColabFold needs)
+colabfold_search 03_out_data/lrr_domain_sequences.fasta ../colabfold_db 16_structural_models/receptor_only_msas \
+  --mmseqs /opt/homebrew/bin/mmseqs --use-env 1 --use-templates 0 --threads 14
+```
+
+Next, we need to prepare the necessary input files in the specific formats required by each structural model we plan to use. This involves running scripts that convert our processed sequence and annotation data into model-specific input directories and file types to ensure compatibility for downstream structure prediction analyses.
+
+
+```
+python 16_structural_models/build_inputs.py \
+  16_structural_models/SERK_coreceptor.tsv \
+  03_out_data/lrr_domain_sequences.fasta \
+  16_structural_models/receptor_only_msas \
+  16_structural_models/input_files_fold
+
+# outputs the following:
+├── 16_structural_models/
+│   └── input_files_fold/
+
+```
+First, we will install and run all receptor-epitope and receptor-epitope-co-receptor members from Model_Building section though Boltz-1. We will begin by running Boltz, a diffusion-based structural modeling tool, on our prepared input files. This will allow us to generate structural predictions for all receptor-epitope and receptor-epitope-co-receptor combinations, serving as a benchmark for our model comparison.
+
+```
+# --- Boltz-1 + Boltz-2 (same package, pick model with --model) -------------
+# boltz-community is a maintained fork with native `--accelerator mps`.
+uv venv envs/boltz --python 3.11
+source envs/boltz/bin/activate
+uv pip install boltz-community pandas pyyaml
+#export PYTORCH_ENABLE_MPS_FALLBACK=1
+
+# ------ run on A5000 card on-----
+
+# Boltz-1
+ sbatch \
+  --job-name="mamp_prediciton_ml2" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 16_structural_models/input_files_fold/boltz --model boltz1 --out_dir 16_structural_models/input_files_fold/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+
+# Boltz-2
+sbatch \
+  --job-name="mamp_prediciton_ml2_boltz2" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 16_structural_models/input_files_fold/boltz --model boltz2 --out_dir 16_structural_models/input_files_fold/boltz2 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+
+  sbatch \
+  --job-name="mamp_prediciton_ml2_boltz2" \
+  --partition=savio4_gpu \
+  --qos=a5k_gpu4_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A5000:1 \
+  --cpus-per-task=4 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 16_structural_models/input_files_fold/boltz --model boltz2 --out_dir 16_structural_models/input_files_fold/boltz2 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+
+```
+
+
+
+```
+  
+# -------- run on A40 card -------------
+uv venv envs/rf3 --python 3.12
+source envs/rf3/bin/activate
+
+# assume torch with CUDA support is already installed
+uv pip install pandas
+uv pip install "rc-foundry[all] @ git+https://github.com/fnachon/foundry.git"
+
+# downloads latest RF3 checkpoint to ~/.foundry/checkpoints
+foundry install rf3          
+
+sbatch \
+  --job-name="rf3_mamp_prediction_ml" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/rf3/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && sed "s#/Users/daniellestevens/Workspace/mamp-prediction-ml#$PWD#g" 16_structural_models/input_files_fold/rf3.json > 16_structural_models/input_files_fold/rf3_hpc.json && rf3 fold inputs="$PWD/16_structural_models/input_files_fold/rf3_hpc.json" out_dir="$PWD/16_structural_models/input_files_fold/rf3" early_stopping_plddt_threshold=0.0 diffusion_batch_size=3 raise_if_missing_msa_for_protein_of_length_n=50 skip_existing=true'
+
+
+sbatch \
+  --job-name="rf3_mamp_prediction_ml" \
+  --partition=savio4_gpu \
+  --qos=a5k_gpu4_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A5000:1 \
+  --cpus-per-task=4 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/rf3/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && sed "s#/Users/daniellestevens/Workspace/mamp-prediction-ml#$PWD#g" 16_structural_models/input_files_fold/rf3.json > 16_structural_models/input_files_fold/rf3_hpc.json && rf3 fold inputs="$PWD/16_structural_models/input_files_fold/rf3_hpc.json" out_dir="$PWD/16_structural_models/input_files_fold/rf3" early_stopping_plddt_threshold=0.0 diffusion_batch_size=3 raise_if_missing_msa_for_protein_of_length_n=50 skip_existing=true'
+
+
+
+# once the combinations have been completed
+Rscript 16_structural_models/00_structure_models_comparisons.R
+
+Rscript 16_structural_models/01_structure_model_accuracy.R \
+  --seqonly ../model_results/02_immuno_stratify_esm2_with_receptor/classification_report.txt \
+  --mamp-ml ../model_results/06_immuno_stratify_esm2_bfactor_weighted/classification_report.txt
