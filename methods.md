@@ -109,7 +109,7 @@ sbatch \
   --exclude=n0215.savio3 \
   --mail-user=dmstev@berkeley.edu \
   --mail-type=ALL \
-  --wrap 'cd /global/scratch/project/vector_kvklab/dani/mamp-ml-structure && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 06_input_files_fold_primary_only/boltz --model boltz1 --out_dir 08_output_fold_primary_only/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 06_input_files_fold_primary_only/boltz --model boltz1 --out_dir 08_output_fold_primary_only/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
 
 
 # Boltz-1
