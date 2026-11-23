@@ -109,22 +109,9 @@ sbatch \
   --exclude=n0215.savio3 \
   --mail-user=dmstev@berkeley.edu \
   --mail-type=ALL \
-  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 06_input_files_fold_primary_only/boltz --model boltz1 --out_dir 08_output_fold_primary_only/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 06_input_files_fold_primary_only/boltz --model boltz1 --out_dir 08_output_fold_primary_only/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
 
 
-# Boltz-1
- sbatch \
-  --job-name="mamp_prediciton_ml2" \
-  --partition=savio3_gpu \
-  --qos=a40_gpu3_normal \
-  --account=fc_kvkallow \
-  --time=16:00:00 \
-  --gres=gpu:A40:1 \
-  --cpus-per-task=8 \
-  --exclude=n0215.savio3 \
-  --mail-user=dmstev@berkeley.edu \
-  --mail-type=ALL \
-  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 16_structural_models/input_files_fold/boltz --model boltz1 --out_dir 16_structural_models/input_files_fold/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
 
 # Boltz-2
 sbatch \
@@ -138,25 +125,9 @@ sbatch \
   --exclude=n0215.savio3 \
   --mail-user=dmstev@berkeley.edu \
   --mail-type=ALL \
-  --wrap 'cd /global/scratch/users/dmstev/mamp_prediction_ml && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 16_structural_models/input_files_fold/boltz --model boltz2 --out_dir 16_structural_models/input_files_fold/boltz2 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
-
-  sbatch \
-  --job-name="mamp_prediciton_ml2_boltz2" \
-  --partition=savio4_gpu \
-  --qos=a5k_gpu4_normal \
-  --account=fc_kvkallow \
-  --time=16:00:00 \
-  --gres=gpu:A5000:1 \
-  --cpus-per-task=4 \
-  --mail-user=dmstev@berkeley.edu \
-  --mail-type=ALL \
-  --wrap 'cd /global/scratch/users/dmstev/mamp-ml-structure && source envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict input_files_fold/boltz --model boltz2 --out_dir input_files_fold/boltz2 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
-
-```
+   --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 06_input_files_fold_primary_only/boltz --model boltz2 --out_dir 08_output_fold_primary_only/boltz2 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
 
 
-
-```
   
 # -------- run on A40 card -------------
 uv venv envs/rf3 --python 3.12
