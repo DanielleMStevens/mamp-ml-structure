@@ -2,15 +2,16 @@
 # Compare Boltz and RF3 confidence metrics across receptor groups. pTM is shown
 # per receptor group only; all other metrics are split by immunogenicity.
 #
-# Inputs:
-#   input_files_fold/boltz{1,2}/boltz_results_boltz/predictions/*/confidence_*.json
-#   input_files_fold/rf3/*/<target>_summary_confidences.json (top-ranked model)
+# Inputs (paths relative to the mamp-ml-structure repo root):
+#   08_output_fold_primary_only/boltz{1,2}/boltz_results_boltz/predictions/*/confidence_*.json
+#   08_output_fold_primary_only/rf3/*/<target>_summary_confidences.json (top-ranked model)
 #   SERK_coreceptor.tsv (row_id, Receptor, Species_normalized, Immunogenicity)
-# Outputs (PDF, written to <model>_plots/ next to this script):
+# Outputs (PDF, written to 09_model_plots/<model>_plots/):
 #   <model>_pTM.pdf                  mean pTM per receptor group
 #   <model>_<metric>_P_vs_NP.pdf     weakly immunogenic counted as immunogenic
 #
-# Usage: Rscript 16_structural_models/00_structure_models_comparisons.R
+# Usage (from repo root or anywhere):
+#   Rscript 00_scripts/03_structure_models_comparisons.R
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -20,30 +21,34 @@ suppressPackageStartupMessages({
   library(readr)
 })
 
-get_script_dir <- function() {
+# Repo root = parent of 00_scripts/ when run via Rscript --file=...
+get_repo_root <- function() {
   file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(file_arg) == 1) {
-    return(dirname(normalizePath(sub("^--file=", "", file_arg))))
+    script_dir <- dirname(normalizePath(sub("^--file=", "", file_arg)))
+    if (basename(script_dir) == "00_scripts") return(dirname(script_dir))
+    return(script_dir)
   }
-  if (dir.exists("16_structural_models")) return(normalizePath("16_structural_models"))
+  if (file.exists("SERK_coreceptor.tsv")) return(normalizePath("."))
+  if (file.exists(file.path("..", "SERK_coreceptor.tsv"))) return(normalizePath(".."))
   getwd()
 }
 
-base_dir <- get_script_dir()
-tsv_path <- file.path(base_dir, "SERK_coreceptor.tsv")
+repo_root <- get_repo_root()
+tsv_path <- file.path(repo_root, "SERK_coreceptor.tsv")
 # RF3 reports no interface pLDDT, and its chain_pair_pae averages over all
 # receptor-peptide residue pairs rather than interface contacts only.
 models <- list(
   boltz1 = list(
-    dir = file.path(base_dir, "input_files_fold/boltz1/boltz_results_boltz/predictions"),
+    dir = file.path(repo_root, "08_output_fold_primary_only/boltz1/boltz_results_boltz/predictions"),
     reader = "read_boltz"
   ),
   boltz2 = list(
-    dir = file.path(base_dir, "input_files_fold/boltz2/boltz_results_boltz/predictions"),
+    dir = file.path(repo_root, "08_output_fold_primary_only/boltz2/boltz_results_boltz/predictions"),
     reader = "read_boltz"
   ),
   rf3 = list(
-    dir = file.path(base_dir, "input_files_fold/rf3"),
+    dir = file.path(repo_root, "08_output_fold_primary_only/rf3"),
     reader = "read_rf3",
     labels = c(complex_ipae = "Inter-chain PAE (\u00c5)"),
     tags = c(complex_ipae = "interchain_PAE"),
@@ -413,8 +418,8 @@ for (model_name in names(models)) {
   message(sprintf("%s: %d confidence files, %d matched to known receptors",
                   model_name, nrow(conf), nrow(dat)))
 
-  out_dir <- file.path(base_dir, paste0(model_name, "_plots"))
-  dir.create(out_dir, showWarnings = FALSE)
+  out_dir <- file.path(repo_root, "09_model_plots", paste0(model_name, "_plots"))
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   n_groups <- n_distinct(dat$Group)
 
   p <- plot_ptm(dat)
