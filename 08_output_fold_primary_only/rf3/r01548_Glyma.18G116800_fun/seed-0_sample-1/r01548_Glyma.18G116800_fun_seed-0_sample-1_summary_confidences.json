@@ -1,0 +1,26 @@
+{
+  "chain_ptm": [0.84,0.72],
+  "chain_pair_pae_min": [
+    [null,3.94],
+    [null,null]
+  ],
+  "chain_pair_pde_min": [
+    [null,2.22],
+    [null,null]
+  ],
+  "chain_pair_pae": [
+    [null,18.13],
+    [null,null]
+  ],
+  "chain_pair_pde": [
+    [null,7.22],
+    [null,null]
+  ],
+  "overall_plddt": 0.8374,
+  "overall_pde": 1.4871,
+  "overall_pae": 7.1275,
+  "ptm": 0.8662914633750916,
+  "iptm": 0.6116636395454407,
+  "has_clash": false,
+  "ranking_score": 0.6626
+}
