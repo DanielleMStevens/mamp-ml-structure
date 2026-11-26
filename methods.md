@@ -188,37 +188,6 @@ sbatch \
   --mail-type=ALL \
   --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 08_output_fold_primary_only/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 06_input_files_fold_primary_only/colabfold_msa 08_output_fold_primary_only/colabfold_af2'
 
-sbatch \
-  --job-name="colabfold_af2_primary" \
-  --partition=savio3_gpu \
-  --qos=a40_gpu3_normal \
-  --account=fc_kvkallow \
-  --time=20:00:00 \
-  --gres=gpu:A40:1 \
-  --cpus-per-task=8 \
-  --exclude=n0215.savio3 \
-  --mail-user=dmstev@berkeley.edu \
-  --mail-type=ALL \
-  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/colabfold/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && mkdir -p 08_output_fold_primary_only/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 06_input_files_fold_primary_only/colabfold_msa 08_output_fold_primary_only/colabfold_af2'
-
-
-colabfold_batch --model-type alphafold2_multimer_v3 --pair-mode unpaired \
-  06_input_files_fold_primary_only/colabfold_msa \
-  08_output_fold_primary_only/colabfold_af2
-
-sbatch \
-  --job-name="colabfold_af2_primary" \
-  --partition=savio3_gpu \
-  --qos=a40_gpu3_normal \
-  --account=fc_kvkallow \
-  --time=16:00:00 \
-  --gres=gpu:A40:1 \
-  --cpus-per-task=8 \
-  --exclude=n0215.savio3 \
-  --mail-user=dmstev@berkeley.edu \
-  --mail-type=ALL \
-  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/colabfold/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && mkdir -p 08_output_fold_primary_only/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 06_input_files_fold_primary_only/colabfold 08_output_fold_primary_only/colabfold_af2'
-
 
 ```
 
@@ -230,7 +199,7 @@ sbatch \
 # once the combinations have been completed
 Rscript 00_scripts/03_structure_models_comparisons.R
 
-Rscript 16_structural_models/01_structure_model_accuracy.R \
+Rscript 00_scripts/04_structure_model_accuracy.R \
   --seqonly ../model_results/02_immuno_stratify_esm2_with_receptor/classification_report.txt \
   --mamp-ml ../model_results/06_immuno_stratify_esm2_bfactor_weighted/classification_report.txt
 ```
