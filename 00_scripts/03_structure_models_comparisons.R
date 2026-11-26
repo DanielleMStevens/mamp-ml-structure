@@ -19,6 +19,8 @@ suppressPackageStartupMessages({
   library(jsonlite)
   library(purrr)
   library(readr)
+  library(showtext)
+  library(sysfonts)
 })
 
 # Repo root = parent of 00_scripts/ when run via Rscript --file=...
@@ -93,7 +95,38 @@ group_order <- c(solved_structure_groups,
 evo_blue   <- "#68AFD7"
 evo_grey   <- "#D0D2D3"
 evo_points <- "#343434"
-base_font  <- "Arial"
+# Register a TTF and draw text via showtext so legend / axis glyphs are
+# outlined in the PDF (avoids Preview kerning bugs with subsetted ArialMT).
+base_font <- "plotfont"
+font_candidates <- list(
+  c("/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf"),
+  c("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf")
+)
+font_registered <- FALSE
+for (paths in font_candidates) {
+  if (file.exists(paths[[1]])) {
+    args <- list(family = base_font, regular = paths[[1]])
+    if (file.exists(paths[[2]])) args$bold <- paths[[2]]
+    if (file.exists(paths[[3]])) args$italic <- paths[[3]]
+    if (file.exists(paths[[4]])) args$bolditalic <- paths[[4]]
+    do.call(font_add, args)
+    font_registered <- TRUE
+    break
+  }
+}
+if (!font_registered) {
+  base_font <- "sans"
+  message("No Arial/DejaVu TTF found; falling back to device sans")
+}
+showtext_auto()
+# Match ggplot pt sizes under cairo_pdf (96 dpi reference).
+showtext_opts(dpi = 96)
 
 classes <- c("Immunogenic", "Non-immunogenic")
 class_colors <- c("Immunogenic" = "#7C9885", "Non-immunogenic" = "#B5B682")
@@ -103,18 +136,32 @@ class_ink <- c("Immunogenic" = "black", "Non-immunogenic" = "black")
 theme_evo <- function(base_size = 11) {
   theme_classic(base_size = base_size, base_family = base_font) +
     theme(
-      text = element_text(colour = "black"),
+      text = element_text(colour = "black", family = base_font),
       axis.line = element_line(colour = "black", linewidth = 0.4),
       axis.ticks = element_line(colour = "black", linewidth = 0.4),
-      axis.text = element_text(colour = "black", size = base_size - 1),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.title = element_text(size = base_size),
-      plot.title = element_text(face = "bold", size = base_size + 1),
-      legend.text = element_text(size = base_size - 1),
+      axis.text = element_text(colour = "black", size = base_size - 1, family = base_font),
+      # vjust = 1 keeps 45°-rotated labels anchored to the tick.
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+      axis.title = element_text(size = base_size, family = base_font),
+      plot.title = element_text(face = "bold", size = base_size + 1, family = base_font),
       legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(
+        size = base_size - 1,
+        family = base_font,
+        colour = "black",
+        margin = margin(l = 2, r = 6, unit = "pt")
+      ),
+      legend.key = element_rect(fill = NA, colour = NA),
       legend.key.size = unit(0.35, "cm"),
-      plot.caption = element_text(size = base_size - 2, colour = "black")
+      legend.spacing.x = unit(0.25, "cm"),
+      legend.margin = margin(t = 2, b = 0),
+      plot.caption = element_text(size = base_size - 2, colour = "black", family = base_font)
     )
+}
+
+save_plot_pdf <- function(path, plot, width, height) {
+  ggplot2::ggsave(path, plot, width = width, height = height, device = grDevices::cairo_pdf)
 }
 
 # ---- Metadata ---------------------------------------------------------------
@@ -418,15 +465,14 @@ for (model_name in names(models)) {
   message(sprintf("%s: %d confidence files, %d matched to known receptors",
                   model_name, nrow(conf), nrow(dat)))
 
-  out_dir <- file.path(repo_root, "09_model_plots", paste0(model_name, "_plots"))
+  out_dir <- file.path(repo_root, "10_model_plots", paste0(model_name, "_plots"))
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   n_groups <- n_distinct(dat$Group)
 
   p <- plot_ptm(dat)
   if (!is.null(p)) {
     out <- file.path(out_dir, sprintf("%s_pTM.pdf", model_name))
-    ggsave(out, p, width = max(3, 0.22 * n_groups + 1.2), height = 2.8,
-           device = cairo_pdf)
+    save_plot_pdf(out, p, width = max(3, 0.22 * n_groups + 1.2), height = 2.8)
     message("  wrote ", basename(out))
   }
 
@@ -435,14 +481,14 @@ for (model_name in names(models)) {
                      cutoff = cutoffs[metric])
     if (is.null(p)) next
     out <- file.path(out_dir, sprintf("%s_%s_P_vs_NP.pdf", model_name, tags[[metric]]))
-    ggsave(out, p, width = max(4.5, 0.5 * n_groups + 1.3), height = 3.1, device = cairo_pdf)
+    save_plot_pdf(out, p, width = max(4.5, 0.5 * n_groups + 1.3), height = 3.1)
     message("  wrote ", basename(out))
   }
 
   p <- plot_metric_summary(dat, "iptm", classes)
   if (!is.null(p)) {
     out <- file.path(out_dir, sprintf("%s_ipTM_all_receptors_P_vs_NP.pdf", model_name))
-    ggsave(out, p, width = 1.3, height = 1.7, device = cairo_pdf)
+    save_plot_pdf(out, p, width = 1.3, height = 1.7)
     message("  wrote ", basename(out))
   }
 }

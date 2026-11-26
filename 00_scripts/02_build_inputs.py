@@ -1,50 +1,81 @@
 """
-Build Boltz, RF3, and ColabFold/AF2 inputs: one receptor-epitope complex per
-Model_Building row.
+Build Boltz, RF3, and ColabFold/AF2 inputs per Model_Building row.
 
-python 00_scripts/02_build_inputs.py \
-    SERK_coreceptor.tsv \
-    03_out_data/lrr_domain_sequences.fasta \
-    04_receptor_only_msas \
-    06_input_files_fold_primary_only
+Modes (mutually exclusive):
+  --primary_only  receptor (A) + peptide (B)
+                  -> 06_input_files_fold_primary_only/
+  --complex       receptor (A) + peptide (B) + co-receptor/SERK (C)
+                  -> 07_input_files_complex/
 
-Arguments may be omitted (defaults above). Relative arguments resolve from the
-repo root. MSA paths in Boltz/RF3 outputs are repo-relative; run those tools
-from the repo root.
+Examples:
+  python 00_scripts/02_build_inputs.py --primary_only
+  python 00_scripts/02_build_inputs.py --complex
 
-ColabFold outputs under <out>/:
-  colabfold/{pair_id}.fasta     receptor:peptide (MSA server if you use these)
-  colabfold_msa/{pair_id}.a3m   unpaired complex MSA reusing the receptor a3m
-                                (pass this directory to colabfold_batch; no MSA
-                                server). Peptide is single-sequence only.
+Relative paths resolve from the repo root. MSA paths written into Boltz/RF3
+inputs are repo-relative; run those tools from the repo root.
 
-Example:
-  colabfold_batch --model-type alphafold2_multimer_v3 --pair-mode unpaired \\
-    06_input_files_fold_primary_only/colabfold_msa \\
-    08_output_fold_primary_only/colabfold_af2
+ColabFold under <out>/:
+  colabfold/{pair_id}.fasta     colon-joined chains (MSA server if used)
+  colabfold_msa/{pair_id}.a3m   unpaired custom MSA (preferred for AF2);
+                                peptide is always single-sequence (no MSA)
 """
-import csv, json, sys
+from __future__ import annotations
+
+import argparse
+import csv
+import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULTS = ["SERK_coreceptor.tsv", "03_out_data/lrr_domain_sequences.fasta",
-            "04_receptor_only_msas", "06_input_files_fold_primary_only"]
+
+DEFAULT_TSV = "SERK_coreceptor.tsv"
+DEFAULT_RECEPTOR_FASTA = "03_out_data/lrr_domain_sequences.fasta"
+DEFAULT_RECEPTOR_MSA = "04_receptor_only_msas"
+DEFAULT_SERK_FASTA = "03_out_data/serk_ectodomain_sequences.fasta"
+DEFAULT_SERK_MSA = "05_coreceptor_msas"
+DEFAULT_PRIMARY_OUT = "06_input_files_fold_primary_only"
+DEFAULT_COMPLEX_OUT = "07_input_files_complex"
 
 
-def from_root(p):
+def from_root(p: str | Path) -> Path:
     p = Path(p).expanduser()
     return p if p.is_absolute() else (REPO_ROOT / p).resolve()
 
 
-def portable(p):  # repo-relative when inside the repo, absolute otherwise
+def portable(p: Path) -> str:
+    """Repo-relative when inside the repo, absolute otherwise."""
     try:
         return p.relative_to(REPO_ROOT).as_posix()
     except ValueError:
         return str(p)
 
 
-def safe(s):  # ColabFold's header -> filename rule
+def safe(s: str) -> str:
+    """ColabFold's header -> filename rule."""
     return "".join(c if c.isalnum() or c in "_.-" else "_" for c in s)
+
+
+def read_fasta_blocks(path: Path) -> list[tuple[str, str]]:
+    blocks = []
+    for block in path.read_text().split(">")[1:]:
+        header, *seq = block.strip().split("\n")
+        blocks.append((header, "".join(seq)))
+    return blocks
+
+
+def a3m_query_sequence(a3m_text: str) -> str:
+    return next(
+        (ln for ln in a3m_text.splitlines()
+         if ln and not ln.startswith(">") and not ln.startswith("#")),
+        "",
+    )
+
+
+def strip_a3m_meta(a3m_text: str) -> str:
+    lines = a3m_text.replace("\x00", "").splitlines()
+    if lines and lines[0].startswith("#") and "\t" in lines[0][1:]:
+        lines = lines[1:]
+    return "\n".join(lines).strip() + "\n"
 
 
 def pair_sequences(a3m_chains: list[str], query_sequences: list[str]) -> str:
@@ -77,96 +108,330 @@ def pad_sequences(a3m_chains: list[str], query_sequences: list[str]) -> str:
     return "\n".join(out)
 
 
-def complex_unpaired_a3m(receptor: str, epitope: str, receptor_a3m: str) -> str:
-    """Annotated ColabFold a3m: receptor MSA unpaired + peptide single sequence."""
-    # Drop a leading '#...\t...' meta line if present (monomer a3ms usually lack it).
-    lines = receptor_a3m.replace("\x00", "").splitlines()
-    if lines and lines[0].startswith("#") and "\t" in lines[0][1:]:
-        lines = lines[1:]
-    rec_msa = "\n".join(lines).strip() + "\n"
-    pep_msa = f">102\n{epitope}\n"
-    queries = [receptor, epitope]
-    paired = [f">101\n{receptor}\n", f">102\n{epitope}\n"]
-    unpaired = [rec_msa, pep_msa]
-    header = f"#{len(receptor)},{len(epitope)}\t1,1\n"
-    return header + pair_sequences(paired, queries) + "\n" + pad_sequences(unpaired, queries) + "\n"
+def unpaired_multimer_a3m(queries: list[str], msa_texts: list[str | None]) -> str:
+    """
+    Annotated ColabFold a3m for N chains.
+
+    msa_texts[i] is raw monomer a3m text, or None for single-sequence-only
+    (used for the peptide).
+    """
+    assert len(queries) == len(msa_texts) and len(queries) >= 2
+    unpaired = []
+    paired = []
+    for i, (seq, msa) in enumerate(zip(queries, msa_texts), start=1):
+        card = 100 + i
+        paired.append(f">{card}\n{seq}\n")
+        if msa is None:
+            unpaired.append(f">{card}\n{seq}\n")
+        else:
+            unpaired.append(strip_a3m_meta(msa))
+    lengths = ",".join(str(len(s)) for s in queries)
+    cards = ",".join("1" for _ in queries)
+    header = f"#{lengths}\t{cards}\n"
+    return (
+        header
+        + pair_sequences(paired, queries)
+        + "\n"
+        + pad_sequences(unpaired, queries)
+        + "\n"
+    )
 
 
-args = sys.argv[1:5] + DEFAULTS[len(sys.argv[1:5]):]
-tsv, fasta, msa_dir, out = map(from_root, args)
-boltz_dir = out / "boltz"
-cf_fa_dir = out / "colabfold"
-cf_msa_dir = out / "colabfold_msa"
-for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
-    d.mkdir(parents=True, exist_ok=True)
+def load_cached_a3m(path: Path, cache: dict[Path, str]) -> str:
+    if path not in cache:
+        cache[path] = path.read_text()
+    return cache[path]
 
 
-# receptor locus ID (2nd '|' field of each header) -> (header, LRR domain sequence)
-domains = {}
-for block in open(fasta).read().split(">")[1:]:
-    header, *seq = block.strip().split("\n")
-    domains.setdefault(safe(header.split("|")[1]), []).append((header, "".join(seq)))
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Build Boltz / RF3 / ColabFold inputs for primary or "
+                    "receptor–peptide–co-receptor complexes."
+    )
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--primary_only",
+        action="store_true",
+        help=f"Receptor + peptide -> {DEFAULT_PRIMARY_OUT}/",
+    )
+    mode.add_argument(
+        "--complex",
+        action="store_true",
+        help=f"Receptor + peptide + co-receptor -> {DEFAULT_COMPLEX_OUT}/",
+    )
+    p.add_argument("--tsv", default=DEFAULT_TSV,
+                   help=f"Pairing table (default: {DEFAULT_TSV})")
+    p.add_argument("--receptor-fasta", default=DEFAULT_RECEPTOR_FASTA,
+                   help="Primary receptor LRR-domain FASTA")
+    p.add_argument("--receptor-msa-dir", default=DEFAULT_RECEPTOR_MSA,
+                   help="Primary receptor monomer a3m directory")
+    p.add_argument("--serk-fasta", default=DEFAULT_SERK_FASTA,
+                   help="Co-receptor ectodomain FASTA (complex mode)")
+    p.add_argument("--serk-msa-dir", default=DEFAULT_SERK_MSA,
+                   help="Co-receptor monomer a3m directory (complex mode)")
+    p.add_argument(
+        "--out",
+        default=None,
+        help="Output directory (defaults depend on --primary_only / --complex)",
+    )
+    return p.parse_args(argv)
 
-rf3, manifest = [], [["pair_id", "row_id", "Receptor_locus_ID", "Ligand",
-                      "a3m", "colabfold_fasta", "colabfold_a3m", "status"]]
-# Cache transformed complex a3m text per (receptor a3m path, epitope) is overkill;
-# cache per receptor a3m path the raw text instead.
-a3m_cache: dict[Path, str] = {}
 
-for row in csv.DictReader(open(tsv), delimiter="\t"):
-    if row["Source_sheet"] != "Model_Building":
-        continue
-    locus = row["Receptor_locus_ID"]
-    pair_id = f"r{int(row['row_id']):05d}_{safe(locus)}_{safe(row['Ligand'])}"
-    hits = domains.get(safe(locus), [])
+def build_primary(args: argparse.Namespace) -> None:
+    tsv = from_root(args.tsv)
+    fasta = from_root(args.receptor_fasta)
+    msa_dir = from_root(args.receptor_msa_dir)
+    out = from_root(args.out or DEFAULT_PRIMARY_OUT)
 
-    if len(hits) != 1:
-        manifest.append([pair_id, row["row_id"], locus, row["Ligand"], "", "", "",
-                         "SKIP: not in FASTA" if not hits else "SKIP: duplicate ID in FASTA"])
-        continue
-    header, receptor = hits[0]
-    a3m = msa_dir / f"{safe(header)}.a3m"
-    if not a3m.exists():
-        manifest.append([pair_id, row["row_id"], locus, row["Ligand"], "", "", "", "SKIP: no a3m"])
-        continue
-    if a3m not in a3m_cache:
-        a3m_cache[a3m] = a3m.read_text()
-    a3m_text = a3m_cache[a3m]
-    # Query line is the first sequence after the first '>'
-    qseq = next((ln for ln in a3m_text.splitlines()
-                 if ln and not ln.startswith(">") and not ln.startswith("#")), "")
-    if qseq != receptor:
-        manifest.append([pair_id, row["row_id"], locus, row["Ligand"], portable(a3m),
-                         "", "", "SKIP: a3m query != domain"])
-        continue
+    boltz_dir = out / "boltz"
+    cf_fa_dir = out / "colabfold"
+    cf_msa_dir = out / "colabfold_msa"
+    for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
+        d.mkdir(parents=True, exist_ok=True)
 
-    a3m_rel = portable(a3m)
-    epitope = row["Ligand_Sequence"].strip().upper()
+    # locus ID (2nd '|' field) -> [(header, LRR domain sequence), ...]
+    domains: dict[str, list[tuple[str, str]]] = {}
+    for header, seq in read_fasta_blocks(fasta):
+        parts = header.split("|")
+        if len(parts) < 2:
+            continue
+        domains.setdefault(safe(parts[1]), []).append((header, seq))
 
-    (boltz_dir / f"{pair_id}.yaml").write_text(
-        "version: 1\nsequences:\n"
-        f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {a3m_rel}\n"
-        f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n")
-    rf3.append({"name": pair_id, "components": [
-        {"seq": receptor, "chain_id": "A", "msa_path": a3m_rel},
-        {"seq": epitope, "chain_id": "B"}]})
+    rf3: list[dict] = []
+    manifest = [["pair_id", "row_id", "Receptor_locus_ID", "Ligand",
+                 "a3m", "colabfold_fasta", "colabfold_a3m", "status"]]
+    a3m_cache: dict[Path, str] = {}
 
-    fa_path = cf_fa_dir / f"{pair_id}.fasta"
-    fa_path.write_text(f">{pair_id}\n{receptor}:{epitope}\n")
-    cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
-    cf_a3m_path.write_text(complex_unpaired_a3m(receptor, epitope, a3m_text))
+    for row in csv.DictReader(open(tsv), delimiter="\t"):
+        if row["Source_sheet"] != "Model_Building":
+            continue
+        locus = row["Receptor_locus_ID"]
+        pair_id = f"r{int(row['row_id']):05d}_{safe(locus)}_{safe(row['Ligand'])}"
+        hits = domains.get(safe(locus), [])
 
-    manifest.append([pair_id, row["row_id"], locus, row["Ligand"], a3m_rel,
-                     portable(fa_path), portable(cf_a3m_path), "built"])
+        if len(hits) != 1:
+            manifest.append([
+                pair_id, row["row_id"], locus, row["Ligand"], "", "", "",
+                "SKIP: not in FASTA" if not hits else "SKIP: duplicate ID in FASTA",
+            ])
+            continue
 
-(out / "rf3.json").write_text(json.dumps(rf3, indent=1))
-csv.writer(open(out / "manifest.tsv", "w"), delimiter="\t").writerows(manifest)
+        header, receptor = hits[0]
+        a3m = msa_dir / f"{safe(header)}.a3m"
+        if not a3m.exists():
+            manifest.append([pair_id, row["row_id"], locus, row["Ligand"],
+                             "", "", "", "SKIP: no a3m"])
+            continue
 
-skipped = [m for m in manifest[1:] if m[-1] != "built"]
-print(f"built {len(rf3)}, skipped {len(skipped)} -> {portable(out)}")
-print(f"  boltz/          {len(rf3)} yaml")
-print(f"  colabfold/      {len(rf3)} fasta  (receptor:peptide)")
-print(f"  colabfold_msa/  {len(rf3)} a3m    (unpaired custom MSA; preferred for AF2)")
-print(f"  rf3.json")
-for m in skipped:
-    print("  ", m[2], m[-1])
+        a3m_text = load_cached_a3m(a3m, a3m_cache)
+        if a3m_query_sequence(a3m_text) != receptor:
+            manifest.append([pair_id, row["row_id"], locus, row["Ligand"],
+                             portable(a3m), "", "", "SKIP: a3m query != domain"])
+            continue
+
+        a3m_rel = portable(a3m)
+        epitope = row["Ligand_Sequence"].strip().upper()
+
+        (boltz_dir / f"{pair_id}.yaml").write_text(
+            "version: 1\nsequences:\n"
+            f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {a3m_rel}\n"
+            f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n"
+        )
+        rf3.append({"name": pair_id, "components": [
+            {"seq": receptor, "chain_id": "A", "msa_path": a3m_rel},
+            {"seq": epitope, "chain_id": "B"},
+        ]})
+
+        fa_path = cf_fa_dir / f"{pair_id}.fasta"
+        fa_path.write_text(f">{pair_id}\n{receptor}:{epitope}\n")
+        cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
+        cf_a3m_path.write_text(
+            unpaired_multimer_a3m([receptor, epitope], [a3m_text, None])
+        )
+
+        manifest.append([pair_id, row["row_id"], locus, row["Ligand"], a3m_rel,
+                         portable(fa_path), portable(cf_a3m_path), "built"])
+
+    (out / "rf3.json").write_text(json.dumps(rf3, indent=1))
+    csv.writer(open(out / "manifest.tsv", "w"), delimiter="\t").writerows(manifest)
+
+    skipped = [m for m in manifest[1:] if m[-1] != "built"]
+    print(f"built {len(rf3)}, skipped {len(skipped)} -> {portable(out)}")
+    print(f"  boltz/          {len(rf3)} yaml")
+    print(f"  colabfold/      {len(rf3)} fasta  (receptor:peptide)")
+    print(f"  colabfold_msa/  {len(rf3)} a3m    (unpaired custom MSA; preferred for AF2)")
+    print(f"  rf3.json")
+    for m in skipped:
+        print("  ", m[2], m[-1])
+
+
+def build_complex(args: argparse.Namespace) -> None:
+    tsv = from_root(args.tsv)
+    receptor_fasta = from_root(args.receptor_fasta)
+    receptor_msa_dir = from_root(args.receptor_msa_dir)
+    serk_fasta = from_root(args.serk_fasta)
+    serk_msa_dir = from_root(args.serk_msa_dir)
+    out = from_root(args.out or DEFAULT_COMPLEX_OUT)
+
+    boltz_dir = out / "boltz"
+    cf_fa_dir = out / "colabfold"
+    cf_msa_dir = out / "colabfold_msa"
+    for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    domains: dict[str, list[tuple[str, str]]] = {}
+    for header, seq in read_fasta_blocks(receptor_fasta):
+        parts = header.split("|")
+        if len(parts) < 2:
+            continue
+        domains.setdefault(safe(parts[1]), []).append((header, seq))
+
+    # SERK_ID -> ectodomain sequence (FASTA headers are bare IDs)
+    serk_ecto: dict[str, str] = {}
+    for header, seq in read_fasta_blocks(serk_fasta):
+        serk_id = header.split()[0]
+        if serk_id in serk_ecto and serk_ecto[serk_id] != seq:
+            raise SystemExit(f"Duplicate conflicting SERK ectodomain for {serk_id}")
+        serk_ecto[serk_id] = seq
+
+    rf3: list[dict] = []
+    manifest = [[
+        "pair_id", "row_id", "Receptor_locus_ID", "Ligand", "SERK_ID",
+        "receptor_a3m", "serk_a3m", "colabfold_fasta", "colabfold_a3m", "status",
+    ]]
+    missing_serk = [[
+        "pair_id", "row_id", "Receptor_locus_ID", "Ligand", "SERK_ID", "reason",
+    ]]
+    a3m_cache: dict[Path, str] = {}
+
+    for row in csv.DictReader(open(tsv), delimiter="\t"):
+        if row["Source_sheet"] != "Model_Building":
+            continue
+        locus = row["Receptor_locus_ID"]
+        ligand = row["Ligand"]
+        pair_id = f"r{int(row['row_id']):05d}_{safe(locus)}_{safe(ligand)}"
+        serk_id = (row.get("SERK_ID") or "").strip()
+
+        hits = domains.get(safe(locus), [])
+        if len(hits) != 1:
+            status = ("SKIP: not in FASTA" if not hits
+                      else "SKIP: duplicate ID in FASTA")
+            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                             "", "", "", "", status])
+            continue
+
+        header, receptor = hits[0]
+        rec_a3m = receptor_msa_dir / f"{safe(header)}.a3m"
+        if not rec_a3m.exists():
+            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                             "", "", "", "", "SKIP: no receptor a3m"])
+            continue
+
+        rec_a3m_text = load_cached_a3m(rec_a3m, a3m_cache)
+        if a3m_query_sequence(rec_a3m_text) != receptor:
+            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                             portable(rec_a3m), "", "", "",
+                             "SKIP: receptor a3m query != domain"])
+            continue
+
+        if not serk_id or serk_id.upper() == "NA":
+            reason = "SKIP: no SERK_ID"
+            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                             portable(rec_a3m), "", "", "", reason])
+            missing_serk.append([pair_id, row["row_id"], locus, ligand,
+                                 serk_id, reason])
+            continue
+
+        coreceptor = serk_ecto.get(serk_id)
+        if not coreceptor:
+            reason = "SKIP: SERK_ID not in ectodomain FASTA"
+            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                             portable(rec_a3m), "", "", "", reason])
+            missing_serk.append([pair_id, row["row_id"], locus, ligand,
+                                 serk_id, reason])
+            continue
+
+        serk_a3m = serk_msa_dir / f"{serk_id}.a3m"
+        if not serk_a3m.exists():
+            # filenames sometimes need safe() — try both
+            serk_a3m_safe = serk_msa_dir / f"{safe(serk_id)}.a3m"
+            if serk_a3m_safe.exists():
+                serk_a3m = serk_a3m_safe
+            else:
+                reason = "SKIP: no SERK a3m"
+                manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                                 portable(rec_a3m), "", "", "", reason])
+                missing_serk.append([pair_id, row["row_id"], locus, ligand,
+                                     serk_id, reason])
+                continue
+
+        serk_a3m_text = load_cached_a3m(serk_a3m, a3m_cache)
+        if a3m_query_sequence(serk_a3m_text) != coreceptor:
+            reason = "SKIP: SERK a3m query != ectodomain"
+            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
+                             portable(rec_a3m), portable(serk_a3m), "", "", reason])
+            missing_serk.append([pair_id, row["row_id"], locus, ligand,
+                                 serk_id, reason])
+            continue
+
+        epitope = row["Ligand_Sequence"].strip().upper()
+        rec_a3m_rel = portable(rec_a3m)
+        serk_a3m_rel = portable(serk_a3m)
+
+        (boltz_dir / f"{pair_id}.yaml").write_text(
+            "version: 1\nsequences:\n"
+            f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {rec_a3m_rel}\n"
+            f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n"
+            f"  - protein:\n      id: C\n      sequence: {coreceptor}\n      msa: {serk_a3m_rel}\n"
+        )
+        rf3.append({"name": pair_id, "components": [
+            {"seq": receptor, "chain_id": "A", "msa_path": rec_a3m_rel},
+            {"seq": epitope, "chain_id": "B"},
+            {"seq": coreceptor, "chain_id": "C", "msa_path": serk_a3m_rel},
+        ]})
+
+        fa_path = cf_fa_dir / f"{pair_id}.fasta"
+        fa_path.write_text(f">{pair_id}\n{receptor}:{epitope}:{coreceptor}\n")
+        cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
+        cf_a3m_path.write_text(
+            unpaired_multimer_a3m(
+                [receptor, epitope, coreceptor],
+                [rec_a3m_text, None, serk_a3m_text],
+            )
+        )
+
+        manifest.append([
+            pair_id, row["row_id"], locus, ligand, serk_id,
+            rec_a3m_rel, serk_a3m_rel, portable(fa_path), portable(cf_a3m_path),
+            "built",
+        ])
+
+    (out / "rf3.json").write_text(json.dumps(rf3, indent=1))
+    csv.writer(open(out / "manifest.tsv", "w"), delimiter="\t").writerows(manifest)
+    missing_path = out / "missing_serk_msa.tsv"
+    csv.writer(open(missing_path, "w"), delimiter="\t").writerows(missing_serk)
+
+    skipped = [m for m in manifest[1:] if m[-1] != "built"]
+    n_missing = len(missing_serk) - 1
+    print(f"built {len(rf3)}, skipped {len(skipped)} -> {portable(out)}")
+    print(f"  boltz/               {len(rf3)} yaml")
+    print(f"  colabfold/           {len(rf3)} fasta  (receptor:peptide:coreceptor)")
+    print(f"  colabfold_msa/       {len(rf3)} a3m    (unpaired; peptide has no MSA)")
+    print(f"  rf3.json")
+    print(f"  missing_serk_msa.tsv {n_missing} rows")
+    for m in skipped[:30]:
+        print("  ", m[2], m[4], m[-1])
+    if len(skipped) > 30:
+        print(f"  ... and {len(skipped) - 30} more (see manifest.tsv)")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    if args.primary_only:
+        build_primary(args)
+    else:
+        build_complex(args)
+
+
+if __name__ == "__main__":
+    main()
