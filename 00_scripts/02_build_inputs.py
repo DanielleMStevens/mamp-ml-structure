@@ -7,17 +7,21 @@ Modes (mutually exclusive):
   --complex       receptor (A) + peptide (B) + co-receptor/SERK (C)
                   -> 07_input_files_complex/
 
+Existing outputs are skipped independently per folding mode (default):
+  boltz      boltz/{pair_id}.yaml
+  rf3        entry in rf3.json (file rewritten only if entries are added)
+  alphafold  colabfold/{pair_id}.fasta + colabfold_msa/{pair_id}.a3m
+             (if either AF file is missing, both are rewritten)
+
+manifest.tsv lists only modes skipped because they already exist
+(header-only when nothing was skipped).
+
 Examples:
   python 00_scripts/02_build_inputs.py --primary_only
   python 00_scripts/02_build_inputs.py --complex
 
 Relative paths resolve from the repo root. MSA paths written into Boltz/RF3
 inputs are repo-relative; run those tools from the repo root.
-
-ColabFold under <out>/:
-  colabfold/{pair_id}.fasta     colon-joined chains (MSA server if used)
-  colabfold_msa/{pair_id}.a3m   unpaired custom MSA (preferred for AF2);
-                                peptide is always single-sequence (no MSA)
 """
 from __future__ import annotations
 
@@ -35,6 +39,8 @@ DEFAULT_SERK_FASTA = "03_out_data/serk_ectodomain_sequences.fasta"
 DEFAULT_SERK_MSA = "05_coreceptor_msas"
 DEFAULT_PRIMARY_OUT = "06_input_files_fold_primary_only"
 DEFAULT_COMPLEX_OUT = "07_input_files_complex"
+
+MANIFEST_STATUS_EXISTS = "skipped: exists"
 
 
 def from_root(p: str | Path) -> Path:
@@ -143,6 +149,20 @@ def load_cached_a3m(path: Path, cache: dict[Path, str]) -> str:
     return cache[path]
 
 
+def load_rf3_json(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text())
+    if not isinstance(data, list):
+        raise SystemExit(f"Expected a JSON list in {path}")
+    return data
+
+
+def write_tsv(path: Path, rows: list[list]) -> None:
+    with open(path, "w", newline="") as f:
+        csv.writer(f, delimiter="\t").writerows(rows)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Build Boltz / RF3 / ColabFold inputs for primary or "
@@ -186,10 +206,10 @@ def build_primary(args: argparse.Namespace) -> None:
     boltz_dir = out / "boltz"
     cf_fa_dir = out / "colabfold"
     cf_msa_dir = out / "colabfold_msa"
+    rf3_path = out / "rf3.json"
     for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    # locus ID (2nd '|' field) -> [(header, LRR domain sequence), ...]
     domains: dict[str, list[tuple[str, str]]] = {}
     for header, seq in read_fasta_blocks(fasta):
         parts = header.split("|")
@@ -197,72 +217,101 @@ def build_primary(args: argparse.Namespace) -> None:
             continue
         domains.setdefault(safe(parts[1]), []).append((header, seq))
 
-    rf3: list[dict] = []
+    rf3 = load_rf3_json(rf3_path)
+    rf3_index = {entry["name"]: i for i, entry in enumerate(rf3)}
+    rf3_dirty = False
+
+    # manifest.tsv: only modes skipped because outputs already exist
     manifest = [["pair_id", "row_id", "Receptor_locus_ID", "Ligand",
-                 "a3m", "colabfold_fasta", "colabfold_a3m", "status"]]
+                 "mode", "status"]]
     a3m_cache: dict[Path, str] = {}
+    n_boltz = n_rf3 = n_af = 0
+    errors: list[str] = []
 
     for row in csv.DictReader(open(tsv), delimiter="\t"):
         if row["Source_sheet"] != "Model_Building":
             continue
         locus = row["Receptor_locus_ID"]
-        pair_id = f"r{int(row['row_id']):05d}_{safe(locus)}_{safe(row['Ligand'])}"
+        ligand = row["Ligand"]
+        pair_id = f"r{int(row['row_id']):05d}_{safe(locus)}_{safe(ligand)}"
         hits = domains.get(safe(locus), [])
 
         if len(hits) != 1:
-            manifest.append([
-                pair_id, row["row_id"], locus, row["Ligand"], "", "", "",
-                "SKIP: not in FASTA" if not hits else "SKIP: duplicate ID in FASTA",
-            ])
+            reason = ("not in FASTA" if not hits else "duplicate ID in FASTA")
+            errors.append(f"{pair_id}: {reason}")
             continue
 
         header, receptor = hits[0]
         a3m = msa_dir / f"{safe(header)}.a3m"
         if not a3m.exists():
-            manifest.append([pair_id, row["row_id"], locus, row["Ligand"],
-                             "", "", "", "SKIP: no a3m"])
+            errors.append(f"{pair_id}: no receptor a3m")
             continue
 
         a3m_text = load_cached_a3m(a3m, a3m_cache)
         if a3m_query_sequence(a3m_text) != receptor:
-            manifest.append([pair_id, row["row_id"], locus, row["Ligand"],
-                             portable(a3m), "", "", "SKIP: a3m query != domain"])
+            errors.append(f"{pair_id}: a3m query != domain")
             continue
 
         a3m_rel = portable(a3m)
         epitope = row["Ligand_Sequence"].strip().upper()
-
-        (boltz_dir / f"{pair_id}.yaml").write_text(
-            "version: 1\nsequences:\n"
-            f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {a3m_rel}\n"
-            f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n"
-        )
-        rf3.append({"name": pair_id, "components": [
-            {"seq": receptor, "chain_id": "A", "msa_path": a3m_rel},
-            {"seq": epitope, "chain_id": "B"},
-        ]})
-
+        yaml_path = boltz_dir / f"{pair_id}.yaml"
         fa_path = cf_fa_dir / f"{pair_id}.fasta"
-        fa_path.write_text(f">{pair_id}\n{receptor}:{epitope}\n")
         cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
-        cf_a3m_path.write_text(
-            unpaired_multimer_a3m([receptor, epitope], [a3m_text, None])
-        )
+        base = [pair_id, row["row_id"], locus, ligand]
 
-        manifest.append([pair_id, row["row_id"], locus, row["Ligand"], a3m_rel,
-                         portable(fa_path), portable(cf_a3m_path), "built"])
+        # --- boltz ---
+        if yaml_path.exists():
+            manifest.append(base + ["boltz", MANIFEST_STATUS_EXISTS])
+        else:
+            yaml_path.write_text(
+                "version: 1\nsequences:\n"
+                f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {a3m_rel}\n"
+                f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n"
+            )
+            n_boltz += 1
 
-    (out / "rf3.json").write_text(json.dumps(rf3, indent=1))
-    csv.writer(open(out / "manifest.tsv", "w"), delimiter="\t").writerows(manifest)
+        # --- rf3 (only add missing pair entries) ---
+        rf3_entry = {
+            "name": pair_id,
+            "components": [
+                {"seq": receptor, "chain_id": "A", "msa_path": a3m_rel},
+                {"seq": epitope, "chain_id": "B"},
+            ],
+        }
+        if pair_id in rf3_index:
+            manifest.append(base + ["rf3", MANIFEST_STATUS_EXISTS])
+        else:
+            rf3.append(rf3_entry)
+            rf3_index[pair_id] = len(rf3) - 1
+            rf3_dirty = True
+            n_rf3 += 1
 
-    skipped = [m for m in manifest[1:] if m[-1] != "built"]
-    print(f"built {len(rf3)}, skipped {len(skipped)} -> {portable(out)}")
-    print(f"  boltz/          {len(rf3)} yaml")
-    print(f"  colabfold/      {len(rf3)} fasta  (receptor:peptide)")
-    print(f"  colabfold_msa/  {len(rf3)} a3m    (unpaired custom MSA; preferred for AF2)")
-    print(f"  rf3.json")
-    for m in skipped:
-        print("  ", m[2], m[-1])
+        # --- alphafold (fasta + a3m as a unit) ---
+        if fa_path.exists() and cf_a3m_path.exists():
+            manifest.append(base + ["alphafold", MANIFEST_STATUS_EXISTS])
+        else:
+            fa_path.write_text(f">{pair_id}\n{receptor}:{epitope}\n")
+            cf_a3m_path.write_text(
+                unpaired_multimer_a3m([receptor, epitope], [a3m_text, None])
+            )
+            n_af += 1
+
+    if rf3_dirty:
+        rf3_path.write_text(json.dumps(rf3, indent=1))
+    write_tsv(out / "manifest.tsv", manifest)
+
+    n_skipped = len(manifest) - 1
+    print(f"primary_only -> {portable(out)}")
+    print(f"  wrote   boltz={n_boltz}  rf3={n_rf3}  alphafold={n_af}")
+    print(f"  skipped {n_skipped} mode(s) already present -> manifest.tsv")
+    if rf3_dirty:
+        print(f"  updated rf3.json ({len(rf3)} entries)")
+    else:
+        print("  rf3.json unchanged")
+    for msg in errors[:30]:
+        print("  ERROR", msg)
+    if len(errors) > 30:
+        print(f"  ... and {len(errors) - 30} more errors")
 
 
 def build_complex(args: argparse.Namespace) -> None:
@@ -276,6 +325,7 @@ def build_complex(args: argparse.Namespace) -> None:
     boltz_dir = out / "boltz"
     cf_fa_dir = out / "colabfold"
     cf_msa_dir = out / "colabfold_msa"
+    rf3_path = out / "rf3.json"
     for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -286,7 +336,6 @@ def build_complex(args: argparse.Namespace) -> None:
             continue
         domains.setdefault(safe(parts[1]), []).append((header, seq))
 
-    # SERK_ID -> ectodomain sequence (FASTA headers are bare IDs)
     serk_ecto: dict[str, str] = {}
     for header, seq in read_fasta_blocks(serk_fasta):
         serk_id = header.split()[0]
@@ -294,15 +343,18 @@ def build_complex(args: argparse.Namespace) -> None:
             raise SystemExit(f"Duplicate conflicting SERK ectodomain for {serk_id}")
         serk_ecto[serk_id] = seq
 
-    rf3: list[dict] = []
-    manifest = [[
-        "pair_id", "row_id", "Receptor_locus_ID", "Ligand", "SERK_ID",
-        "receptor_a3m", "serk_a3m", "colabfold_fasta", "colabfold_a3m", "status",
-    ]]
+    rf3 = load_rf3_json(rf3_path)
+    rf3_index = {entry["name"]: i for i, entry in enumerate(rf3)}
+    rf3_dirty = False
+
+    manifest = [["pair_id", "row_id", "Receptor_locus_ID", "Ligand", "SERK_ID",
+                 "mode", "status"]]
     missing_serk = [[
         "pair_id", "row_id", "Receptor_locus_ID", "Ligand", "SERK_ID", "reason",
     ]]
     a3m_cache: dict[Path, str] = {}
+    n_boltz = n_rf3 = n_af = 0
+    errors: list[str] = []
 
     for row in csv.DictReader(open(tsv), delimiter="\t"):
         if row["Source_sheet"] != "Model_Building":
@@ -314,30 +366,23 @@ def build_complex(args: argparse.Namespace) -> None:
 
         hits = domains.get(safe(locus), [])
         if len(hits) != 1:
-            status = ("SKIP: not in FASTA" if not hits
-                      else "SKIP: duplicate ID in FASTA")
-            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                             "", "", "", "", status])
+            reason = ("not in FASTA" if not hits else "duplicate ID in FASTA")
+            errors.append(f"{pair_id}: {reason}")
             continue
 
         header, receptor = hits[0]
         rec_a3m = receptor_msa_dir / f"{safe(header)}.a3m"
         if not rec_a3m.exists():
-            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                             "", "", "", "", "SKIP: no receptor a3m"])
+            errors.append(f"{pair_id}: no receptor a3m")
             continue
 
         rec_a3m_text = load_cached_a3m(rec_a3m, a3m_cache)
         if a3m_query_sequence(rec_a3m_text) != receptor:
-            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                             portable(rec_a3m), "", "", "",
-                             "SKIP: receptor a3m query != domain"])
+            errors.append(f"{pair_id}: receptor a3m query != domain")
             continue
 
         if not serk_id or serk_id.upper() == "NA":
             reason = "SKIP: no SERK_ID"
-            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                             portable(rec_a3m), "", "", "", reason])
             missing_serk.append([pair_id, row["row_id"], locus, ligand,
                                  serk_id, reason])
             continue
@@ -345,22 +390,17 @@ def build_complex(args: argparse.Namespace) -> None:
         coreceptor = serk_ecto.get(serk_id)
         if not coreceptor:
             reason = "SKIP: SERK_ID not in ectodomain FASTA"
-            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                             portable(rec_a3m), "", "", "", reason])
             missing_serk.append([pair_id, row["row_id"], locus, ligand,
                                  serk_id, reason])
             continue
 
         serk_a3m = serk_msa_dir / f"{serk_id}.a3m"
         if not serk_a3m.exists():
-            # filenames sometimes need safe() — try both
             serk_a3m_safe = serk_msa_dir / f"{safe(serk_id)}.a3m"
             if serk_a3m_safe.exists():
                 serk_a3m = serk_a3m_safe
             else:
                 reason = "SKIP: no SERK a3m"
-                manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                                 portable(rec_a3m), "", "", "", reason])
                 missing_serk.append([pair_id, row["row_id"], locus, ligand,
                                      serk_id, reason])
                 continue
@@ -368,8 +408,6 @@ def build_complex(args: argparse.Namespace) -> None:
         serk_a3m_text = load_cached_a3m(serk_a3m, a3m_cache)
         if a3m_query_sequence(serk_a3m_text) != coreceptor:
             reason = "SKIP: SERK a3m query != ectodomain"
-            manifest.append([pair_id, row["row_id"], locus, ligand, serk_id,
-                             portable(rec_a3m), portable(serk_a3m), "", "", reason])
             missing_serk.append([pair_id, row["row_id"], locus, ligand,
                                  serk_id, reason])
             continue
@@ -377,52 +415,74 @@ def build_complex(args: argparse.Namespace) -> None:
         epitope = row["Ligand_Sequence"].strip().upper()
         rec_a3m_rel = portable(rec_a3m)
         serk_a3m_rel = portable(serk_a3m)
-
-        (boltz_dir / f"{pair_id}.yaml").write_text(
-            "version: 1\nsequences:\n"
-            f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {rec_a3m_rel}\n"
-            f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n"
-            f"  - protein:\n      id: C\n      sequence: {coreceptor}\n      msa: {serk_a3m_rel}\n"
-        )
-        rf3.append({"name": pair_id, "components": [
-            {"seq": receptor, "chain_id": "A", "msa_path": rec_a3m_rel},
-            {"seq": epitope, "chain_id": "B"},
-            {"seq": coreceptor, "chain_id": "C", "msa_path": serk_a3m_rel},
-        ]})
-
+        yaml_path = boltz_dir / f"{pair_id}.yaml"
         fa_path = cf_fa_dir / f"{pair_id}.fasta"
-        fa_path.write_text(f">{pair_id}\n{receptor}:{epitope}:{coreceptor}\n")
         cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
-        cf_a3m_path.write_text(
-            unpaired_multimer_a3m(
-                [receptor, epitope, coreceptor],
-                [rec_a3m_text, None, serk_a3m_text],
+        base = [pair_id, row["row_id"], locus, ligand, serk_id]
+
+        # --- boltz ---
+        if yaml_path.exists():
+            manifest.append(base + ["boltz", MANIFEST_STATUS_EXISTS])
+        else:
+            yaml_path.write_text(
+                "version: 1\nsequences:\n"
+                f"  - protein:\n      id: A\n      sequence: {receptor}\n      msa: {rec_a3m_rel}\n"
+                f"  - protein:\n      id: B\n      sequence: {epitope}\n      msa: empty\n"
+                f"  - protein:\n      id: C\n      sequence: {coreceptor}\n      msa: {serk_a3m_rel}\n"
             )
-        )
+            n_boltz += 1
 
-        manifest.append([
-            pair_id, row["row_id"], locus, ligand, serk_id,
-            rec_a3m_rel, serk_a3m_rel, portable(fa_path), portable(cf_a3m_path),
-            "built",
-        ])
+        # --- rf3 ---
+        rf3_entry = {
+            "name": pair_id,
+            "components": [
+                {"seq": receptor, "chain_id": "A", "msa_path": rec_a3m_rel},
+                {"seq": epitope, "chain_id": "B"},
+                {"seq": coreceptor, "chain_id": "C", "msa_path": serk_a3m_rel},
+            ],
+        }
+        if pair_id in rf3_index:
+            manifest.append(base + ["rf3", MANIFEST_STATUS_EXISTS])
+        else:
+            rf3.append(rf3_entry)
+            rf3_index[pair_id] = len(rf3) - 1
+            rf3_dirty = True
+            n_rf3 += 1
 
-    (out / "rf3.json").write_text(json.dumps(rf3, indent=1))
-    csv.writer(open(out / "manifest.tsv", "w"), delimiter="\t").writerows(manifest)
-    missing_path = out / "missing_serk_msa.tsv"
-    csv.writer(open(missing_path, "w"), delimiter="\t").writerows(missing_serk)
+        # --- alphafold (fasta + a3m as a unit) ---
+        if fa_path.exists() and cf_a3m_path.exists():
+            manifest.append(base + ["alphafold", MANIFEST_STATUS_EXISTS])
+        else:
+            fa_path.write_text(
+                f">{pair_id}\n{receptor}:{epitope}:{coreceptor}\n"
+            )
+            cf_a3m_path.write_text(
+                unpaired_multimer_a3m(
+                    [receptor, epitope, coreceptor],
+                    [rec_a3m_text, None, serk_a3m_text],
+                )
+            )
+            n_af += 1
 
-    skipped = [m for m in manifest[1:] if m[-1] != "built"]
+    if rf3_dirty:
+        rf3_path.write_text(json.dumps(rf3, indent=1))
+    write_tsv(out / "manifest.tsv", manifest)
+    write_tsv(out / "missing_serk_msa.tsv", missing_serk)
+
+    n_skipped = len(manifest) - 1
     n_missing = len(missing_serk) - 1
-    print(f"built {len(rf3)}, skipped {len(skipped)} -> {portable(out)}")
-    print(f"  boltz/               {len(rf3)} yaml")
-    print(f"  colabfold/           {len(rf3)} fasta  (receptor:peptide:coreceptor)")
-    print(f"  colabfold_msa/       {len(rf3)} a3m    (unpaired; peptide has no MSA)")
-    print(f"  rf3.json")
+    print(f"complex -> {portable(out)}")
+    print(f"  wrote   boltz={n_boltz}  rf3={n_rf3}  alphafold={n_af}")
+    print(f"  skipped {n_skipped} mode(s) already present -> manifest.tsv")
+    if rf3_dirty:
+        print(f"  updated rf3.json ({len(rf3)} entries)")
+    else:
+        print("  rf3.json unchanged")
     print(f"  missing_serk_msa.tsv {n_missing} rows")
-    for m in skipped[:30]:
-        print("  ", m[2], m[4], m[-1])
-    if len(skipped) > 30:
-        print(f"  ... and {len(skipped) - 30} more (see manifest.tsv)")
+    for msg in errors[:30]:
+        print("  ERROR", msg)
+    if len(errors) > 30:
+        print(f"  ... and {len(errors) - 30} more errors")
 
 
 def main(argv: list[str] | None = None) -> None:
