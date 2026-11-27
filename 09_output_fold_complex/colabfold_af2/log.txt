@@ -1,0 +1,4 @@
+2026-11-27 13:22:18,642 Running colabfold 1.5.5 (bfc0e83d3b87730f6903f6c385b08c426d1e791e)
+2026-11-27 13:28:38,620 Running on GPU
+2026-11-27 13:29:11,287 Found 5 citations for tools or databases
+2026-11-27 13:29:11,288 Query 1/2438: r02402_XP_078953501_nlp (length 504)
