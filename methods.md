@@ -101,7 +101,7 @@ uv pip install boltz-community pandas pyyaml
 # make directory for outputs
 mkdir -p 08_output_fold_primary_only
 
-# Boltz-1 new test
+# --------------- Boltz-1 (primary only) ---------------
 sbatch \
   --job-name="mamp_prediciton_ml2" \
   --partition=savio3_gpu \
@@ -116,8 +116,7 @@ sbatch \
   --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 06_input_files_fold_primary_only/boltz --model boltz1 --out_dir 08_output_fold_primary_only/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
 
 
-
-# Boltz-2
+# --------------- Boltz-2 (primary only) ---------------
 sbatch \
   --job-name="mamp_prediciton_ml2_boltz2" \
   --partition=savio3_gpu \
@@ -142,8 +141,10 @@ uv pip install pandas
 uv pip install "rc-foundry[all] @ git+https://github.com/fnachon/foundry.git"
 
 # downloads latest RF3 checkpoint to ~/.foundry/checkpoints
-foundry install rf3          
+foundry install rf3   
 
+
+# --------------- RF3 (primary only) ---------------
 sbatch \
   --job-name="rf3_mamp_prediction_ml" \
   --partition=savio3_gpu \
@@ -175,7 +176,8 @@ done
 Finally, we will run the same files with alphafold2 and alphafold3.
 
 ```
-# 
+# --------------- Colabfold - AlphaFold2-Multimer (primary only) ---------------
+
 sbatch \
   --job-name="colabfold_af2_primary" \
   --partition=savio3_gpu \
@@ -189,10 +191,105 @@ sbatch \
   --mail-type=ALL \
   --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 08_output_fold_primary_only/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 06_input_files_fold_primary_only/colabfold_msa 08_output_fold_primary_only/colabfold_af2'
 
+
+# --------------- AlphaFold3 (primary only) ---------------
+
+
 ```
 
+Now that we've done all the primary receptor-epitope combinations, we need to do the complex as well. Therefore, similar as above, we will run the following commands for the complexes.
+
+```
+# make a directory that holds the outputs
+mkdir -p 09_output_fold_complex
+
+# --------------- Boltz-1 (receptor complex (primary-peptide-co-receptor)) ---------------
+sbatch \
+  --job-name="mamp_boltz1_complex" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 07_input_files_complex/boltz --model boltz1 --out_dir 09_output_fold_complex/boltz1 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+
+# --------------- Boltz-2 (receptor complex (primary-peptide-co-receptor)) ---------------
+sbatch \
+  --job-name="mamp_boltz1_complex" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=16:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/boltz/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && boltz predict 07_input_files_complex/boltz --model boltz2 --out_dir 09_output_fold_complex/boltz2 --accelerator gpu --devices 1 --recycling_steps 3 --sampling_steps 150 --max_parallel_samples 1 --diffusion_samples 1 --output_format mmcif'
+
+# --------------- RF3 (receptor complex (primary-peptide-co-receptor)) ---------------
+sbatch \
+  --job-name="rf3_mamp_complex" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=20:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && source /global/scratch/users/dmstev/mamp_prediction_ml/envs/rf3/bin/activate && nvidia-smi && python -c "import torch; assert torch.cuda.is_available(), \"no CUDA\"" && rf3 fold inputs="07_input_files_complex/rf3.json" out_dir="09_output_fold_complex/rf3" early_stopping_plddt_threshold=0.0 diffusion_batch_size=3 raise_if_missing_msa_for_protein_of_length_n=50 skip_existing=true'
+
+find 09_output_fold_complex/rf3 -name '*_ranking_scores.csv' | while read f; do
+  m="${f%_ranking_scores.csv}_metrics.csv"
+  [ -e "$m" ] || cp "$f" "$m"
+done
+
+# --------------- Colabfold - AlphaFold2-Multimer (receptor complex (primary-peptide-co-receptor)) ---------------
+
+# note need to run on H200 card....
+sbatch \
+  --job-name="colabfold_af2_complex" \
+  --partition=savio3_gpu \
+  --qos=a40_gpu3_normal \
+  --account=fc_kvkallow \
+  --time=20:00:00 \
+  --gres=gpu:A40:1 \
+  --cpus-per-task=8 \
+  --exclude=n0215.savio3 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 09_output_fold_complex/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 07_input_files_complex/colabfold_msa 09_output_fold_complex/colabfold_af2'
+
+  sbatch \
+  --job-name="colabfold_af2_complex" \
+  --partition=savio4_gpu \
+  --qos=savio_lowprio \
+  --account=fc_kvkallow \
+  --time=20:00:00 \
+  --gres=gpu:H200:1 \
+  --cpus-per-task=8 \
+  --mail-user=dmstev@berkeley.edu \
+  --mail-type=ALL \
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 09_output_fold_complex/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 07_input_files_complex/colabfold_msa 09_output_fold_complex/colabfold_af2'
 
 
+# --------------- AlphaFold3 (receptor complex (primary-peptide-co-receptor)) ---------------
+
+```
+
+We predicted structures for each receptor–ligand pair (and, separately, receptor–ligand–SERK co-receptor complexes) with Boltz-1, Boltz-2, RoseTTAFold3, and AlphaFold2-Multimer (ColabFold), using precomputed monomer MSAs for the receptor and co-receptor chains. For each model we treated the reported interface predicted TM score (ipTM) as a confidence proxy for whether the predicted complex supports a productive protein–protein interaction, with higher ipTM indicating stronger predicted interface confidence. We will not plot recognition (immunogenic) vs. non-recognition (non-immunogenic) and save the plors in 10_model_plots.
+
+```
+# once the combinations have been completed
+Rscript 00_scripts/03_structure_models_comparisons.R
+```
+AlphaFold’s ipTM is a whole-chain interface score, so large length imbalances, disordered regions, or non-contacting accessory domains can systematically inflate or depress the metric even when the predicted contacting domains are unchanged (Dunbrack et al.). This is especially problematic for domain–peptide complexes such as LRR receptors with short ligands, where chain lengths differ by orders of magnitude. We therefore also scored interfaces with ipSAE, which restricts the calculation to interchain residue pairs with good predicted aligned error (PAE) and rescales the TM length parameter to those well-aligned residues, providing a more reliable proxy for interaction confidence than ipTM alone.
 
 ```
 # Interface scoring with DunbrackLab IPSAE (https://github.com/DunbrackLab/IPSAE)
@@ -204,22 +301,15 @@ sbatch \
 # path with a patched summary_confidences.json that supplies chain_pair_iptm
 # from the overall iptm (needed by the AF3 parser; plotted metric is ipSAE).
 
-
+# this will calculate ipSAE scores (takes about 1-2 hours) and plot in 11_ipsae_plots
 Rscript 00_scripts/04_model_comparisons_ipsae.R
-# optional smoke test: Rscript 00_scripts/04_model_comparisons_ipsae.R --limit 20
+```
+Finally, we treated each structure model’s interface confidence (ipTM, and separately ipSAE) as a binary immunogenicity classifier by applying a fixed score threshold and comparing predictions to experimental labels on the shared mamp-ml test set. We summarized performance with accuracy and macro- and weighted-F1 scores and ranked the best-performing structural models against SeqOnly and mamp-ml baselines from their published classification reports.
 
 ```
-
-
-
-
-```
-
-# once the combinations have been completed
-Rscript 00_scripts/03_structure_models_comparisons.R
-
+# compares F1 metrics of structural models vs. pLMs including mamp-ml
 Rscript 00_scripts/05_structure_model_accuracy.R \
   --seqonly ../model_results/02_immuno_stratify_esm2_with_receptor/classification_report.txt \
   --mamp-ml ../model_results/06_immuno_stratify_esm2_bfactor_weighted/classification_report.txt
-
 ```
+
