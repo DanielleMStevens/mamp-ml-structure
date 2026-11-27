@@ -313,3 +313,6 @@ Rscript 00_scripts/05_structure_model_accuracy.R \
   --mamp-ml ../model_results/06_immuno_stratify_esm2_bfactor_weighted/classification_report.txt
 ```
 
+Using the top-performing structural model from the F1 comparison, we can next treat its continuous interface confidence scores (ipTM and/or ipSAE) as predictors in a simple regression or logistic model of immunogenicity, rather than relying on a fixed hard threshold. The model would be fit on the labeled training pairs and evaluated on the held-out mamp-ml test set with the same accuracy and F1 metrics, asking whether a learned mapping from structure confidence to outcome can match or exceed mamp-ml. If useful, additional per-complex features from that fold (for example pTM or chain-pair scores) could be included in the same lightweight regressor.
+
+
