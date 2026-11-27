@@ -175,6 +175,7 @@ done
 Finally, we will run the same files with alphafold2 and alphafold3.
 
 ```
+# 
 sbatch \
   --job-name="colabfold_af2_primary" \
   --partition=savio3_gpu \
@@ -188,6 +189,24 @@ sbatch \
   --mail-type=ALL \
   --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 08_output_fold_primary_only/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 06_input_files_fold_primary_only/colabfold_msa 08_output_fold_primary_only/colabfold_af2'
 
+```
+
+
+
+
+```
+# Interface scoring with DunbrackLab IPSAE (https://github.com/DunbrackLab/IPSAE)
+# on top-ranked primary-only folds. Model-specific PAE / distance cutoffs:
+#   AlphaFold2 (colabfold_af2): 15 Å / 15 Å
+#   Boltz-1, Boltz-2, RF3:      10 Å / 10 Å
+# Scores (Type == max ipSAE) and plots go under 11_ipsae_plots/; existing
+# per-pair score files are skipped. RF3 is run through IPSAE's AF3 (json+cif)
+# path with a patched summary_confidences.json that supplies chain_pair_iptm
+# from the overall iptm (needed by the AF3 parser; plotted metric is ipSAE).
+
+
+Rscript 00_scripts/04_model_comparisons_ipsae.R
+# optional smoke test: Rscript 00_scripts/04_model_comparisons_ipsae.R --limit 20
 
 ```
 
@@ -199,7 +218,8 @@ sbatch \
 # once the combinations have been completed
 Rscript 00_scripts/03_structure_models_comparisons.R
 
-Rscript 00_scripts/04_structure_model_accuracy.R \
+Rscript 00_scripts/05_structure_model_accuracy.R \
   --seqonly ../model_results/02_immuno_stratify_esm2_with_receptor/classification_report.txt \
   --mamp-ml ../model_results/06_immuno_stratify_esm2_bfactor_weighted/classification_report.txt
+
 ```
