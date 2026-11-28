@@ -400,7 +400,7 @@ results <- bind_rows(report_df, structure_results) %>%
   mutate(model = factor(model, levels = model_levels)) %>%
   arrange(model)
 
-out_dir <- file.path(base_dir, "model_comparision_stats")
+out_dir <- file.path(base_dir, "12_model_comparision_stats")
 dir.create(out_dir, showWarnings = FALSE)
 
 structure_n <- unique(structure_results$n)
