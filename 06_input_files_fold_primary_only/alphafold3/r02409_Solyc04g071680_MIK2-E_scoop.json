@@ -1,0 +1,28 @@
+{
+  "name": "r02409_Solyc04g071680_MIK2-E_scoop",
+  "modelSeeds": [
+    1
+  ],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "LHHLNFTSFPHLQLINFTNNSIHGTLPKNMFNLSRLSFLYLSYNQFDGVIPHEIGLLKNLKHLDLSINRFIGFIPSSIGNLIKLELLFLSVNELYGPVPSSFGNLKSLVHLCLLRNKLNGSLPKEFENLTHLQTFQVAENNFSGHLPQNVCFGGSLAKFIAYDNKFIGRVPRTLKNCSTLSRVRLDGNQLSSNISEAFGVYPSLVYMDLSHNKLYGELSSQWGFSHNLTSLKISNNNLVGAIPVEIGNLIKLRMLDLSSNHLTGEIPKSLGRLTLLLELDLHENRISGETPVEVGKLSKLTRLDLGANNMSGTIPAEIGDCRQLWYLNLSKNMLNTTIPSNLGNLHSLAYLDLSYNMLSGEIPWHIGSLRSLERMNLSRNNLSGSIPPSFNERVSLRSIDISCNQLVGPLPKIVAFQNASREELRDNKDLCSNNHTGMRPCSSLRRKERTSRKLILTLTLSLI",
+        "unpairedMsaPath": "../../04_receptor_only_msas/Solanum_lycopersicum_Solyc04g071680_MIK2-E_MIK2_LRR_domain.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "PVRSSQSSQAGGR",
+        "unpairedMsa": "",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 2
+}
