@@ -1,5 +1,7 @@
 pair_id	row_id	Receptor_locus_ID	Ligand	SERK_ID	mode	status
+r00001_Vigun07g219600_In11	1	Vigun07g219600	In11	LOC114187310	boltz	skipped: exists
 r00001_Vigun07g219600_In11	1	Vigun07g219600	In11	LOC114187310	rf3	skipped: exists
+r00001_Vigun07g219600_In11	1	Vigun07g219600	In11	LOC114187310	alphafold	skipped: exists
 r00002_Vigun07g219600_In11	2	Vigun07g219600	In11	LOC114187310	boltz	skipped: exists
 r00002_Vigun07g219600_In11	2	Vigun07g219600	In11	LOC114187310	rf3	skipped: exists
 r00002_Vigun07g219600_In11	2	Vigun07g219600	In11	LOC114187310	alphafold	skipped: exists

@@ -1,5 +1,5 @@
 """
-Build Boltz, RF3, and ColabFold/AF2 inputs per Model_Building row.
+Build Boltz, RF3, ColabFold/AF2, and AlphaFold3 inputs per Model_Building row.
 
 Modes (mutually exclusive):
   --primary_only  receptor (A) + peptide (B)
@@ -8,10 +8,11 @@ Modes (mutually exclusive):
                   -> 07_input_files_complex/
 
 Existing outputs are skipped independently per folding mode (default):
-  boltz      boltz/{pair_id}.yaml
-  rf3        entry in rf3.json (file rewritten only if entries are added)
-  alphafold  colabfold/{pair_id}.fasta + colabfold_msa/{pair_id}.a3m
-             (if either AF file is missing, both are rewritten)
+  boltz       boltz/{pair_id}.yaml
+  rf3         entry in rf3.json (file rewritten only if entries are added)
+  alphafold   colabfold/{pair_id}.fasta + colabfold_msa/{pair_id}.a3m
+              (if either AF file is missing, both are rewritten)
+  alphafold3  alphafold3/{pair_id}.json
 
 manifest.tsv lists only modes skipped because they already exist
 (header-only when nothing was skipped).
@@ -21,13 +22,15 @@ Examples:
   python 00_scripts/02_build_inputs.py --complex
 
 Relative paths resolve from the repo root. MSA paths written into Boltz/RF3
-inputs are repo-relative; run those tools from the repo root.
+inputs are repo-relative; run those tools from the repo root. AlphaFold3
+unpairedMsaPath values are relative to each JSON file (AF3 dialect v2).
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -163,10 +166,50 @@ def write_tsv(path: Path, rows: list[list]) -> None:
         csv.writer(f, delimiter="\t").writerows(rows)
 
 
+def relpath_to(path: Path, start: Path) -> str:
+    """Path relative to start, suitable for AF3 unpairedMsaPath."""
+    return os.path.relpath(path.resolve(), start.resolve()).replace("\\", "/")
+
+
+def af3_protein(
+    chain_id: str,
+    sequence: str,
+    *,
+    msa_path: Path | None,
+    json_dir: Path,
+) -> dict:
+    """
+    One AF3 protein chain. Heteromers use separate entries with distinct ids.
+
+    Custom MSA (AF3 docs): unpairedMsaPath + pairedMsa \"\" + templates [].
+    No MSA (peptide): unpairedMsa \"\" + pairedMsa \"\" + templates [].
+    """
+    protein: dict = {"id": chain_id, "sequence": sequence}
+    if msa_path is None:
+        protein["unpairedMsa"] = ""
+        protein["pairedMsa"] = ""
+        protein["templates"] = []
+    else:
+        protein["unpairedMsaPath"] = relpath_to(msa_path, json_dir)
+        protein["pairedMsa"] = ""
+        protein["templates"] = []
+    return {"protein": protein}
+
+
+def af3_job(name: str, sequences: list[dict]) -> dict:
+    return {
+        "name": name,
+        "modelSeeds": [1],
+        "sequences": sequences,
+        "dialect": "alphafold3",
+        "version": 2,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Build Boltz / RF3 / ColabFold inputs for primary or "
-                    "receptor–peptide–co-receptor complexes."
+        description="Build Boltz / RF3 / ColabFold / AlphaFold3 inputs for "
+                    "primary or receptor–peptide–co-receptor complexes."
     )
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument(
@@ -206,8 +249,9 @@ def build_primary(args: argparse.Namespace) -> None:
     boltz_dir = out / "boltz"
     cf_fa_dir = out / "colabfold"
     cf_msa_dir = out / "colabfold_msa"
+    af3_dir = out / "alphafold3"
     rf3_path = out / "rf3.json"
-    for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
+    for d in (boltz_dir, cf_fa_dir, cf_msa_dir, af3_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     domains: dict[str, list[tuple[str, str]]] = {}
@@ -225,7 +269,7 @@ def build_primary(args: argparse.Namespace) -> None:
     manifest = [["pair_id", "row_id", "Receptor_locus_ID", "Ligand",
                  "mode", "status"]]
     a3m_cache: dict[Path, str] = {}
-    n_boltz = n_rf3 = n_af = 0
+    n_boltz = n_rf3 = n_af = n_af3 = 0
     errors: list[str] = []
 
     for row in csv.DictReader(open(tsv), delimiter="\t"):
@@ -257,6 +301,7 @@ def build_primary(args: argparse.Namespace) -> None:
         yaml_path = boltz_dir / f"{pair_id}.yaml"
         fa_path = cf_fa_dir / f"{pair_id}.fasta"
         cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
+        af3_path = af3_dir / f"{pair_id}.json"
         base = [pair_id, row["row_id"], locus, ligand]
 
         # --- boltz ---
@@ -296,13 +341,24 @@ def build_primary(args: argparse.Namespace) -> None:
             )
             n_af += 1
 
+        # --- alphafold3 ---
+        if af3_path.exists():
+            manifest.append(base + ["alphafold3", MANIFEST_STATUS_EXISTS])
+        else:
+            af3_path.write_text(json.dumps(af3_job(pair_id, [
+                af3_protein("A", receptor, msa_path=a3m, json_dir=af3_dir),
+                af3_protein("B", epitope, msa_path=None, json_dir=af3_dir),
+            ]), indent=2) + "\n")
+            n_af3 += 1
+
     if rf3_dirty:
         rf3_path.write_text(json.dumps(rf3, indent=1))
     write_tsv(out / "manifest.tsv", manifest)
 
     n_skipped = len(manifest) - 1
     print(f"primary_only -> {portable(out)}")
-    print(f"  wrote   boltz={n_boltz}  rf3={n_rf3}  alphafold={n_af}")
+    print(f"  wrote   boltz={n_boltz}  rf3={n_rf3}  alphafold={n_af}  "
+          f"alphafold3={n_af3}")
     print(f"  skipped {n_skipped} mode(s) already present -> manifest.tsv")
     if rf3_dirty:
         print(f"  updated rf3.json ({len(rf3)} entries)")
@@ -325,8 +381,9 @@ def build_complex(args: argparse.Namespace) -> None:
     boltz_dir = out / "boltz"
     cf_fa_dir = out / "colabfold"
     cf_msa_dir = out / "colabfold_msa"
+    af3_dir = out / "alphafold3"
     rf3_path = out / "rf3.json"
-    for d in (boltz_dir, cf_fa_dir, cf_msa_dir):
+    for d in (boltz_dir, cf_fa_dir, cf_msa_dir, af3_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     domains: dict[str, list[tuple[str, str]]] = {}
@@ -353,7 +410,7 @@ def build_complex(args: argparse.Namespace) -> None:
         "pair_id", "row_id", "Receptor_locus_ID", "Ligand", "SERK_ID", "reason",
     ]]
     a3m_cache: dict[Path, str] = {}
-    n_boltz = n_rf3 = n_af = 0
+    n_boltz = n_rf3 = n_af = n_af3 = 0
     errors: list[str] = []
 
     for row in csv.DictReader(open(tsv), delimiter="\t"):
@@ -418,6 +475,7 @@ def build_complex(args: argparse.Namespace) -> None:
         yaml_path = boltz_dir / f"{pair_id}.yaml"
         fa_path = cf_fa_dir / f"{pair_id}.fasta"
         cf_a3m_path = cf_msa_dir / f"{pair_id}.a3m"
+        af3_path = af3_dir / f"{pair_id}.json"
         base = [pair_id, row["row_id"], locus, ligand, serk_id]
 
         # --- boltz ---
@@ -464,6 +522,17 @@ def build_complex(args: argparse.Namespace) -> None:
             )
             n_af += 1
 
+        # --- alphafold3 ---
+        if af3_path.exists():
+            manifest.append(base + ["alphafold3", MANIFEST_STATUS_EXISTS])
+        else:
+            af3_path.write_text(json.dumps(af3_job(pair_id, [
+                af3_protein("A", receptor, msa_path=rec_a3m, json_dir=af3_dir),
+                af3_protein("B", epitope, msa_path=None, json_dir=af3_dir),
+                af3_protein("C", coreceptor, msa_path=serk_a3m, json_dir=af3_dir),
+            ]), indent=2) + "\n")
+            n_af3 += 1
+
     if rf3_dirty:
         rf3_path.write_text(json.dumps(rf3, indent=1))
     write_tsv(out / "manifest.tsv", manifest)
@@ -472,7 +541,8 @@ def build_complex(args: argparse.Namespace) -> None:
     n_skipped = len(manifest) - 1
     n_missing = len(missing_serk) - 1
     print(f"complex -> {portable(out)}")
-    print(f"  wrote   boltz={n_boltz}  rf3={n_rf3}  alphafold={n_af}")
+    print(f"  wrote   boltz={n_boltz}  rf3={n_rf3}  alphafold={n_af}  "
+          f"alphafold3={n_af3}")
     print(f"  skipped {n_skipped} mode(s) already present -> manifest.tsv")
     if rf3_dirty:
         print(f"  updated rf3.json ({len(rf3)} entries)")

@@ -266,7 +266,7 @@ sbatch \
   --mail-type=ALL \
   --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 09_output_fold_complex/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 07_input_files_complex/colabfold_msa 09_output_fold_complex/colabfold_af2'
 
-  sbatch \
+sbatch \
   --job-name="colabfold_af2_complex" \
   --partition=savio4_gpu \
   --qos=savio_lowprio \
@@ -274,9 +274,10 @@ sbatch \
   --time=20:00:00 \
   --gres=gpu:H200:1 \
   --cpus-per-task=8 \
+  --mem=128G \
   --mail-user=dmstev@berkeley.edu \
   --mail-type=ALL \
-  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && which colabfold_batch && mkdir -p 09_output_fold_complex/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 07_input_files_complex/colabfold_msa 09_output_fold_complex/colabfold_af2'
+  --wrap 'cd /global/scratch/projects/vector_kvklab/dani/mamp-ml-structure && module load anaconda3 && source activate localfold && module load gcc/10.5.0 && export PATH="/global/scratch/users/dmstev/localcolabfold/colabfold-conda/bin:$PATH" && nvidia-smi && mkdir -p 09_output_fold_complex/colabfold_af2 && colabfold_batch --model-type alphafold2_multimer_v3 --num-recycle 3 --num-models 3 --pair-mode unpaired 07_input_files_complex/colabfold_msa 09_output_fold_complex/colabfold_af2'
 
 
 # --------------- AlphaFold3 (receptor complex (primary-peptide-co-receptor)) ---------------
