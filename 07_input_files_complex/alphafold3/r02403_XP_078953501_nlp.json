@@ -1,0 +1,37 @@
+{
+  "name": "r02403_XP_078953501_nlp",
+  "modelSeeds": [
+    1
+  ],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "TNLAVNRNLLTGSIPVSFGDLTSLNSLYMHQNQLSGPIPIQLVILKSVIDLKLNKNQLSGSIPPEFGNSTQLQRLDLSSNRLTGQIPKEFGKMKRMLNLSLADNQLSGIIPPEIGSFELIEVLDLSTNRLNGSLPISIGQWEHIHYLNLSNNKLGEKIPSEIGKLVQLTKLDLSQNLLTDVIPTEVQGLQSLQKLDLSHNRLSGSIPNAFIRLPHGIDINLSYNELSGPVPQSPNFVNASIEGNPGVCGNITGVKLCADQMIKKKNNPSHHGVILVIIFPLIGA",
+        "unpairedMsaPath": "../../04_receptor_only_msas/Lactuca_sativa_XP_078953501_LNR-like_LRR_domain.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "AIMYAWYFPKDSPMLLMGHRHDAE",
+        "unpairedMsa": "",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "C",
+        "sequence": "NAEGDALNALKTQLGDPNNVLQSWDATLVNPCTWFHVTCNNENSVTRVDLGNANLSGQLVAQLGELTNLQYLELYSNNITGRIPIELGNLTNLVSLDLYLNRLDGGIPDTLGKLQKLRFLRLNNNTLTGTIPISLTTITSLQVLDLSNNNLRGDVPVNGSFSLFTPISFANNPQLKAPAVSPQAPAPPNSPSPSVG",
+        "unpairedMsaPath": "../../05_coreceptor_msas/gene-LSAT_V11C700373250.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 2
+}

@@ -1,0 +1,37 @@
+{
+  "name": "r02375_Glyma.18G254000_phytocytokine",
+  "modelSeeds": [
+    1
+  ],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "KNLEWLEVSNCGLQGTIPSDIGNLPKLTHLDLSHNSLYGEIPPSLANLTQLEFLIISHNNIQGSIPELLFLKNLTILDLSDNSLDGEIPPALANLTQLESLIISDNNIQGSIPELLFLKNLTVLDLSYNSLDGEIPPALANLTQLQRLIISYNNIQGPIPGELWFLKNLTVLDLSYNSLDGEIPPALTNLTQLENLIISHNNIQGSIPQNLVFLKSLTLLDLSANKISGTLPLSQTNFPRLIFLDISDNLLSGSLKPLSVGNHAQLTSIYLRNNSISGKIPPELGYLPFLTTLDLSYNNLTGTVPLSMQNVFNLRLSFNNLKGPIPYGFSGSELIGNKGVCSD",
+        "unpairedMsaPath": "../../04_receptor_only_msas/Glycine_max_Glyma.18G254000_unknown_LRR_domain.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "DHPRGGNY",
+        "unpairedMsa": "",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "C",
+        "sequence": "NQEGDALNALKSNLQDPNNVLQSWDATLVNPCTWFHVTCNSDNSVTRVDLGNADLSGQLVSQLGQLTNLQYLELYSNKITGKIPDELGNLTNLVSLDLYLNTLNGPIPTTLGKLAKLRFLRLNNNSLTGGIPISLTNVSSLQVLDLSNNHLKGEIPVNGSFSLFTPISYQNNLGLIQPKYTPSPVSPTPPPASSG",
+        "unpairedMsaPath": "../../05_coreceptor_msas/Glyma.15G051600.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 2
+}

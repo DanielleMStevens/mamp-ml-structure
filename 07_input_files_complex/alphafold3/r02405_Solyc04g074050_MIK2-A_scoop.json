@@ -1,0 +1,37 @@
+{
+  "name": "r02405_Solyc04g074050_MIK2-A_scoop",
+  "modelSeeds": [
+    1
+  ],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "LEYVDLSMNQLSGIIPHAIGNLTNLVYLDLSSNQFSGKIPPQIGSLSKVENLYISDNHLNGFIPAEIGHLPERLCNGGKLEILTVNRNKLTGTIPRSLSNCSSFKRVRFNNNSFTGNLSEAFGIHPELKFIDLSDNDFHGELSSNWGKYKNLTTFWIARNNISGSIPPEIGNIKGLLGLDLSANHLVGQIPEEFGKLTSLVELSLKNNQISGNIPQELGSLTNLDSLDLSDNRLNGSIPTFLGDYQHLFHLNLSCNKFGQKIPKEIGGITHLNVLDLSHNLLVGEIPPQLTNLKYLVNLNLSHNSLSGHIPEEFDSLTGLQDVVLSYNELEGPIPNNNAFMNASLEGNKGLCGNVTGFQPCERPSSMVKKHSM",
+        "unpairedMsaPath": "../../04_receptor_only_msas/Solanum_lycopersicum_Solyc04g074050_MIK2-A_MIK2_LRR_domain.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "PVRSSQSSQAGGR",
+        "unpairedMsa": "",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "C",
+        "sequence": "NAEGDALNALKTNLADPNSVLQSWDATLVNPCTWFHVTCNNENSVTRVDLGNANLSGQLVPQLGQLQKLQYLELYSNNISGRIPNELGNLTELVSLDLYLNNLNGPIPPSLGRLQKLRFLRLNNNSLNEGIPMSLTTIVALQVLDLSNNHLTGLVPVNGSFSLFTPISFANNQLEVPPVSPPPPLPPTPSSSSSVG",
+        "unpairedMsaPath": "../../05_coreceptor_msas/Solyc10g047140.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 2
+}
