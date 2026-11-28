@@ -1,0 +1,30 @@
+{
+  "chain_ptm": [0.83,0.7,0.82],
+  "chain_pair_pae_min": [
+    [null,10.31,1.92],
+    [null,null,17.03],
+    [null,null,null]
+  ],
+  "chain_pair_pde_min": [
+    [null,6.01,0.58],
+    [null,null,8.49],
+    [null,null,null]
+  ],
+  "chain_pair_pae": [
+    [null,21.67,15.82],
+    [null,null,24.67],
+    [null,null,null]
+  ],
+  "chain_pair_pde": [
+    [null,10.11,6.54],
+    [null,null,11.43],
+    [null,null,null]
+  ],
+  "overall_plddt": 0.8276,
+  "overall_pde": 3.7761,
+  "overall_pae": 11.8758,
+  "ptm": 0.7532396912574768,
+  "iptm": 0.7937113642692566,
+  "has_clash": false,
+  "ranking_score": 0.7856
+}
