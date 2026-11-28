@@ -1,0 +1,28 @@
+{
+  "name": "r00607_Niben101Scf03455g01008_flg22",
+  "modelSeeds": [
+    1
+  ],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "SDNNFSGKLKPMIGRLSKLRVLRARSNSFLGPIPPEIGKLSQLMDLVLDENSFSGVIPPEISMLSGLQGLWLSDNKLEGKLPVQLFELKKLNELRLQNNNFFGPIPHQISKLELLSLLDLSRNKLNGTIPESMASLRRLMTLDLSHNLLTGSVPRAVLASMRSMQFYLKVSSNFLDGTIPDEIGVLEMVQEIDMSNNNLSGSIPSSFGRCKNLFSLDLSGNMLSGPAPGAVLTKLSELVFLNLSRNRLESELPEMAGLPHLRSVDLSHNKFKGIIPERFASMPALKYLNLSFNQLEGHIPKGGVFNNIKLADLVGNPSLCGTKFLRPCSIKSNRTGSHGFSK",
+        "unpairedMsaPath": "../../04_receptor_only_msas/Nicotiana_benthamiana_Niben101Scf03455g01008_FLS2_LRR_domain.a3m",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "ERLSSLYCVKSAKDDAAGQAIA",
+        "unpairedMsa": "",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 2
+}
